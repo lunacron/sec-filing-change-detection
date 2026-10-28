@@ -1,16 +1,31 @@
 import argparse
+import os
 
 import json
 from pathlib import Path
 
 from .ingest.client import EdgarClient
 from .align.sections import align_sections
-from .diff.paragraphs import diff_filings
+from .diff.paragraphs import DiffResult, diff_filings
+from .llm import classify as clf
 from .parse.html import parse_filing
 from .parse.models import ParsedFiling
 
 
+def _load_env(path: Path = Path(".env")) -> None:
+    """Minimal .env loader so commands work without sourcing the file first."""
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            k = k.strip().removeprefix("export ").strip()
+            os.environ.setdefault(k, v.strip().strip('"').strip("'"))
+
+
 def main() -> None:
+    _load_env()
     p = argparse.ArgumentParser(prog="edgar")
     sub = p.add_subparsers(dest="cmd", required=True)
     ing = sub.add_parser("ingest", help="fetch recent 10-K filings for a CIK")
@@ -25,6 +40,14 @@ def main() -> None:
     df = sub.add_parser("diff", help="paragraph-level diff of two parsed filings")
     df.add_argument("old_accession")
     df.add_argument("new_accession")
+    cl = sub.add_parser("classify", help="LLM-classify changed paragraphs from a diff")
+    cl.add_argument("old_accession")
+    cl.add_argument("new_accession")
+    cl.add_argument("--sample", type=int, default=40, help="number of changes (0 = all)")
+    cl.add_argument("--seed", type=int, default=0)
+    cl.add_argument("--model", default=clf.DEFAULT_MODEL)
+    cl.add_argument("--prompt", default="classify_v001")
+    cl.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
     args = p.parse_args()
 
     if args.cmd == "ingest":
@@ -64,6 +87,26 @@ def main() -> None:
         out.write_text(res.model_dump_json(indent=1))
         print(res.summary)
         print(f"-> {out}")
+
+    if args.cmd == "classify":
+        path = Path("data/diffs") / f"{args.old_accession}__{args.new_accession}.changes.json"
+        res = DiffResult.model_validate_json(path.read_text())
+        todo = [c for c in res.changes if c.needs_llm]
+        picked = clf.sample_changes(todo, args.sample or len(todo), args.seed)
+        system, _ = clf.load_prompt(args.prompt)
+        est = clf.estimate_cost([clf.build_user_message(c) for c in picked], system)
+        print(f"{len(picked)} of {len(todo)} changes; ~{est['input_tokens']:,} input / "
+              f"~{est['output_tokens']:,} output tokens (rough estimate)")
+        print("estimated USD by model:", est["usd"])
+        if args.dry_run:
+            return
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise SystemExit("ANTHROPIC_API_KEY is not set (add it to .env)")
+        import anthropic
+
+        db = clf.open_db(Path("data/edgar.db"))
+        clf.classify_changes(anthropic.Anthropic(), picked, db,
+                             prompt_version=args.prompt, model=args.model)
 
 
 if __name__ == "__main__":

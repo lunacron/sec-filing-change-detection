@@ -70,3 +70,9 @@ def test_paragraph_moved_across_sections():
 def test_mask_keeps_dollar_amounts():
     assert mask_dates("sold $2024 million on march 3, 2025") == "sold $2024 million on <date>"
     assert mask_dates("net sales of 2,024 units in 2024") == "net sales of 2,024 units in <yr>"
+
+
+def test_year_followed_by_comma_or_period_is_masked():
+    assert mask_dates("the fourth quarter of 2024, which were") == "the fourth quarter of <yr>, which were"
+    assert mask_dates("ended in 2024.") == "ended in <yr>."
+    assert mask_dates("a total of 2024,500 units") == "a total of 2024,500 units"

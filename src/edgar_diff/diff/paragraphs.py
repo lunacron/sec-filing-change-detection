@@ -18,7 +18,7 @@ MOVED_MIN = 0.85  # across sections: stricter, less context to go on
 
 _MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
 DATE_RE = re.compile(rf"\b(?:{_MONTHS})\.? \d{{1,2}}(?:, (?:19|20)\d{{2}})?")
-YEAR_RE = re.compile(r"(?<![\d,.$])(?:19|20)\d{2}(?![\d,])")
+YEAR_RE = re.compile(r"(?<![\d,.$])(?:19|20)\d{2}(?!\d|[,.]\d)")
 
 
 def mask_dates(norm: str) -> str:
