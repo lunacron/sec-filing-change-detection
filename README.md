@@ -136,19 +136,124 @@ Don't change the prompt blind. The intended order: hand-label the 40 results (st
 - Current models reject `temperature`, so runs cannot be pinned to temperature 0. Repeatability comes from the result cache and from the eval measuring run-to-run variation.
 - Refusals, truncated replies and schema failures are saved as `uncertain` with that reason. The optional server-side refusal fallback is not enabled.
 
-## Usage
-
-The SEC requires a User-Agent that identifies you. Copy `.env.example` to `.env`, set `EDGAR_USER_AGENT`, then load it:
+## Setup
 
 ```bash
-set -a && . ./.env && set +a
-uv sync
-uv run edgar ingest 320193 --n 2                    # fetch Apple's two latest 10-Ks
-uv run edgar parse 320193 <accession>               # parse a cached filing
-uv run edgar align <old_accession> <new_accession>  # align sections
-uv run edgar diff <old_accession> <new_accession>   # paragraph-level diff
-uv run edgar classify <old> <new> --sample 40 --model claude-sonnet-5-5 [--dry-run]
-uv run pytest
+cd edgar    # run everything from the project folder
+uv sync                              # install dependencies (first time only)
+cp .env.example .env                 # then edit .env
 ```
 
-Data is written under `data/` (git-ignored): `raw/`, `parsed/`, `diffs/`.
+`.env` holds your settings. It is git-ignored and the program reads it by itself, so there is no need to source it.
+
+| Setting | Needed for | Example |
+|---|---|---|
+| `EDGAR_USER_AGENT` | downloading from the SEC (the SEC requires a name and contact email) | `EDGAR_USER_AGENT="edgar-research you@example.com"` |
+| `ANTHROPIC_API_KEY` | the LLM classification step only | `ANTHROPIC_API_KEY="sk-ant-..."` |
+
+## Testing (unit tests)
+
+```bash
+uv run pytest -q
+```
+
+Expected: `17 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+
+| Test file | What it checks |
+|---|---|
+| `tests/test_client.py` | the EDGAR client keeps only 10-K, 10-K405 and 10-K/A filings |
+| `tests/test_parse.py` | Item sections and paragraphs are found; the hidden XBRL header and page footers are dropped; paragraph IDs are stable; small tables survive |
+| `tests/test_align.py` | sections are matched, added or removed by Item key |
+| `tests/test_diff.py` | unchanged / modified / removed / added (the A, B, C, D example), date-only changes skipped, a one-digit figure change is not skipped, a paragraph moved between sections is a move, years followed by a comma or period are masked |
+| `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly, evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
+| `tests/test_env.py` | the `.env` loader accepts `export KEY = value` |
+
+Run one file or one test:
+
+```bash
+uv run pytest tests/test_diff.py -q
+uv run pytest tests/test_diff.py::test_date_roll_forward_is_cosmetic -q
+```
+
+If you change the code, run the tests before running the pipeline.
+
+## Running the pipeline
+
+Two kinds of ID appear in the commands:
+
+- **CIK** (Central Index Key): the SEC's permanent ID for a company. Apple is `320193`.
+- **Accession number**: the ID of one specific filing, like `0000320193-25-000079`. Do not read the company out of it.
+
+The example values below are Apple's two latest 10-Ks. Keep them to reproduce the example, or replace them with your own. For another company, find its CIK at https://www.sec.gov/edgar/searchedgar/companysearch, run step 1, and copy the two accession numbers it prints.
+
+The **old** filing always comes first. Swap them and added and removed flip.
+
+```bash
+# 1. Download the filings from the SEC (network). Prints each accession number.
+uv run edgar ingest 320193 --n 2
+#                   ^ <company CIK>
+
+# 2. Parse each filing into sections and paragraphs (local).
+uv run edgar parse 320193 0000320193-24-000123      # old filing
+uv run edgar parse 320193 0000320193-25-000079      # new filing
+#                  ^ <company CIK>  ^ <accession number>
+
+# 3. Align sections by Item key (local; the diff step also does this internally).
+uv run edgar align 0000320193-24-000123 0000320193-25-000079
+#                  ^ <old accession>    ^ <new accession>
+
+# 4. Diff paragraphs (local). Writes data/diffs/<old>__<new>.changes.json
+uv run edgar diff 0000320193-24-000123 0000320193-25-000079
+#                 ^ <old accession>    ^ <new accession>
+
+# 5. See the cost estimate first. No API call, free.
+uv run edgar classify 0000320193-24-000123 0000320193-25-000079 --sample 40 --dry-run
+
+# 6. Classify with the LLM (network, needs ANTHROPIC_API_KEY). About $0.27 for 40 on Sonnet 5.5.
+uv run edgar classify 0000320193-24-000123 0000320193-25-000079 --sample 40 --model claude-sonnet-5-5
+#                     ^ <old accession>    ^ <new accession>
+```
+
+Notes:
+- Only step 1 contacts the SEC and only step 6 contacts Anthropic. Steps 2-5 are local and free, so re-run them as often as you like.
+- Downloads are cached, and classifications are cached by change, prompt hash and model, so repeating a step does not repeat the cost.
+- `--sample 0` classifies every changed paragraph, not just a sample.
+- The pipeline has only been tried on Apple.
+
+What each step leaves behind (all under `data/`, which is git-ignored):
+
+| Step | Output |
+|---|---|
+| 1 ingest | `data/raw/<CIK>/<accession>/` with the filing `.htm` and `meta.json` |
+| 2 parse | `data/parsed/<accession>.json` |
+| 3 align | `data/diffs/<old>__<new>.alignment.json` |
+| 4 diff | `data/diffs/<old>__<new>.changes.json` |
+| 6 classify | rows in `data/edgar.db` |
+
+## Checking the database
+
+After step 6, the model's answers are in `data/edgar.db` (SQLite). The table is `classifications`; the columns are described in the Classification section above.
+
+**In VS Code:** install the "SQLite Viewer" extension, then click `data/edgar.db` in the file explorer and open the `classifications` table.
+
+**In a terminal:**
+
+```bash
+sqlite3 -header -column data/edgar.db
+```
+
+```sql
+SELECT COUNT(*) FROM classifications;                                   -- rows saved
+SELECT label, COUNT(*) FROM classifications GROUP BY label;             -- label mix
+SELECT change_id, label, confidence, rationale
+  FROM classifications WHERE is_material = 1;                           -- material changes
+SELECT change_id, uncertainty_reason
+  FROM classifications WHERE label = 'uncertain';                       -- what it could not decide
+SELECT COUNT(*) FROM classifications WHERE evidence_grounded = 0;       -- quotes not found in the source (should be 0)
+```
+
+Leave with `.quit`. Without `sqlite3`: `sudo apt install sqlite3`.
+
+The database stores IDs and answers, not the paragraph text. To read the original paragraphs for a row, find its `change_id` in `data/diffs/<old>__<new>.changes.json`.
+
+Quick sanity check that a run worked: the row count should equal the number of changes you classified (40 for `--sample 40`), `evidence_grounded = 0` should return 0 rows, and `created_at`, `model_id` and `prompt_sha256` should be filled in.
