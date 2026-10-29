@@ -69,6 +69,12 @@ def build_user_message(c: Change) -> str:
         parts.append(f"<old_text>\n{c.old_text}\n</old_text>")
     if c.new_text is not None:
         parts.append(f"<new_text>\n{c.new_text}\n</new_text>")
+    if c.hint:
+        h = c.hint
+        parts.append(
+            f'<closest_paragraph_in_other_filing similarity="{h.similarity}" section="{h.section}" '
+            f'already_matched_to_another_paragraph="{str(h.already_matched).lower()}">\n{h.text}\n'
+            f"</closest_paragraph_in_other_filing>")
     if c.word_diff:
         diff = "\n".join(f"{d.op}: {d.old!r} -> {d.new!r}" for d in c.word_diff)
         parts.append(f"<word_diff>\n{diff}\n</word_diff>")
@@ -92,6 +98,8 @@ def _squash(s: str) -> str:
 def evidence_grounded(quotes: list[str], c: Change) -> bool:
     """Every quote must appear verbatim (modulo whitespace/quote style) in old or new text."""
     source = _squash((c.old_text or "") + " " + (c.new_text or ""))
+    if c.hint:  # the model may rely on the closest paragraph, so allow quotes from it
+        source += " " + _squash(c.hint.text)
     return all(_squash(q) in source for q in quotes)
 
 

@@ -21,6 +21,19 @@ DATE_RE = re.compile(rf"\b(?:{_MONTHS})\.? \d{{1,2}}(?:, (?:19|20)\d{{2}})?")
 YEAR_RE = re.compile(r"(?<![\d,.$])(?:19|20)\d{2}(?!\d|[,.]\d)")
 
 
+HINT_MIN = 0.70
+HINT_PARTIAL_MIN_CHARS = 60  # containment (partial) matching only for text this long
+
+
+def is_heading_like(text: str) -> bool:
+    """Short fragment with no sentence punctuation or digits: a heading or list item."""
+    t = text.strip()
+    return (
+        len(t) <= 100 and len(t.split()) <= 14
+        and not re.search(r"[.!?:;]$", t) and not re.search(r"\d", t) and "|" not in t
+    )
+
+
 def mask_dates(norm: str) -> str:
     """Hide full dates and bare years so a rolled-forward date is not a change.
 
@@ -36,6 +49,15 @@ class WordOp(BaseModel):
     new: str
 
 
+class Hint(BaseModel):
+    """Closest paragraph in the other filing, for added/removed paragraphs."""
+    paragraph_id: str
+    section: str
+    text: str
+    similarity: float
+    already_matched: bool  # that paragraph is already paired with another one
+
+
 class Change(BaseModel):
     change_id: str
     kind: Literal["modified", "added", "removed", "moved"]
@@ -48,6 +70,8 @@ class Change(BaseModel):
     similarity: float | None = None
     cosmetic: bool = False  # identical once dates/years are masked
     needs_llm: bool = True
+    skip_reason: str | None = None  # why needs_llm is False
+    hint: Hint | None = None
     word_diff: list[WordOp] = []
 
 
@@ -151,6 +175,46 @@ def _match(olds, news, threshold, moved: bool):
     return changes, unchanged, olds, news
 
 
+def _hints(sources: list[Paragraph], targets: list[Paragraph], paired_ids: set[str]) -> dict[str, Hint]:
+    """For each source paragraph, the most similar target paragraph (>= HINT_MIN), if any."""
+    if not sources or not targets:
+        return {}
+    src = [mask_dates(p.normalized_text) for p in sources]
+    tgt = [mask_dates(p.normalized_text) for p in targets]
+    sim = process.cdist(src, tgt, scorer=fuzz.ratio, dtype=np.float32, workers=-1) / 100.0
+    # A long paragraph folded into a longer one scores low on ratio; containment catches it.
+    long_idx = [i for i, t in enumerate(src) if len(t) >= HINT_PARTIAL_MIN_CHARS]
+    if long_idx:
+        part = process.cdist([src[i] for i in long_idx], tgt, scorer=fuzz.partial_ratio,
+                             dtype=np.float32, workers=-1) / 100.0
+        tgt_len = np.array([len(t) for t in tgt])
+        for row, i in enumerate(long_idx):
+            # Only when the target is at least as long: a short target "contained" in a
+            # long source (e.g. a heading) is not a rewrite of it.
+            part[row][tgt_len < len(src[i])] = 0.0
+            sim[i] = np.maximum(sim[i], part[row])
+    out = {}
+    for i, p in enumerate(sources):
+        j = int(sim[i].argmax())
+        if sim[i, j] >= HINT_MIN:
+            t = targets[j]
+            out[p.paragraph_id] = Hint(
+                paragraph_id=t.paragraph_id, section=t.section_key, text=t.text,
+                similarity=round(float(sim[i, j]), 3), already_matched=t.paragraph_id in paired_ids)
+    return out
+
+
+def _skip_reason(c: Change) -> str | None:
+    if c.cosmetic:
+        return "date_only"
+    if c.kind == "moved" and not c.needs_llm:
+        return "moved_unchanged"
+    texts = [t for t in (c.old_text, c.new_text) if t]
+    if texts and all(is_heading_like(t) for t in texts):
+        return "heading"
+    return None
+
+
 def diff_filings(old: ParsedFiling, new: ParsedFiling, alignment: FilingAlignment) -> DiffResult:
     old_by_key = {s.key: s for s in old.sections}
     new_by_key = {s.key: s for s in new.sections}
@@ -177,8 +241,27 @@ def diff_filings(old: ParsedFiling, new: ParsedFiling, alignment: FilingAlignmen
     changes += c
     unchanged += u
 
-    changes += [_change("removed", o, None, None) for o in old_pool]
-    changes += [_change("added", None, n, None) for n in new_pool]
+    # Hints: for each removed/added paragraph, the closest paragraph in the other filing.
+    all_old = [p for sec in old.sections for p in sec.paragraphs]
+    all_new = [p for sec in new.sections for p in sec.paragraphs]
+    removed_ids = {p.paragraph_id for p in old_pool}
+    added_ids = {p.paragraph_id for p in new_pool}
+    old_hints = _hints(old_pool, all_new, {p.paragraph_id for p in all_new} - added_ids)
+    new_hints = _hints(new_pool, all_old, {p.paragraph_id for p in all_old} - removed_ids)
+
+    for o in old_pool:
+        c = _change("removed", o, None, None)
+        c.hint = old_hints.get(o.paragraph_id)
+        changes.append(c)
+    for n in new_pool:
+        c = _change("added", None, n, None)
+        c.hint = new_hints.get(n.paragraph_id)
+        changes.append(c)
+
+    for c in changes:
+        c.skip_reason = _skip_reason(c)
+        if c.skip_reason:
+            c.needs_llm = False
 
     summary = {
         "unchanged": unchanged,
@@ -187,6 +270,8 @@ def diff_filings(old: ParsedFiling, new: ParsedFiling, alignment: FilingAlignmen
         "removed": sum(c.kind == "removed" for c in changes),
         "moved": sum(c.kind == "moved" for c in changes),
         "cosmetic": sum(c.cosmetic for c in changes),
+        "skipped_heading": sum(c.skip_reason == "heading" for c in changes),
+        "with_hint": sum(c.hint is not None for c in changes),
         "needs_llm": sum(c.needs_llm for c in changes),
     }
     return DiffResult(old_accession=old.accession, new_accession=new.accession,

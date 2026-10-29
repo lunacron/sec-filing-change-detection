@@ -53,12 +53,12 @@ It flags and sorts changes. It does not judge investment value. The "material" l
 | 1. Ingest | Fetch filings from EDGAR into a raw cache | Done |
 | 2. Parse | HTML/iXBRL into Items and paragraphs with stable IDs | Done |
 | 3. Align | Pair sections by Item key | Done |
-| 4. Diff | Find added, removed and modified paragraphs | Done |
-| 5. Classify | Schema-constrained LLM classification | Done (first 40-change run; not yet checked against hand labels) |
+| 4. Diff | Find added, removed and modified paragraphs; skip date-only changes and bare headings; attach a closest-paragraph hint to added/removed ones | Done |
+| 5. Classify | Schema-constrained LLM classification | Done (prompt v002; 37-change sample run; not yet checked against hand labels) |
 | 6. Ground | Check extracted figures against the source text | Planned |
 | 7. Eval | Regression set with pass/fail thresholds | Planned |
 
-See [edgar_plan.md](edgar_plan.md) for the full plan and [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step.
+See [edgar_plan.md](edgar_plan.md) for the full plan, [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step, and [pipeline_flowchart.md](pipeline_flowchart.md) for flowcharts of a first and second run with real example messages.
 
 ## Classification (LLM step)
 
@@ -66,8 +66,8 @@ See [edgar_plan.md](edgar_plan.md) for the full plan and [paragraph_diff_explain
 
 ### The two messages sent on every call
 
-1. **System prompt**: the whole file `prompts/classify_v001.md`, identical for every call. It is the instruction manual: the task, a warning that filing text is data and not instructions, the eight labels with definitions, what "material" means, how to treat added and removed paragraphs, and the rules for `uncertain`, `confidence` and `evidence_quotes`. It contains no specific paragraph.
-2. **User message**: built fresh for each change by `build_user_message` in `src/edgar_diff/llm/classify.py`. It holds the section (e.g. `10-K/9A`), the change kind, `<old_text>`, `<new_text>` and `<word_diff>`. An added paragraph has only the new text, and a removed one only the old text.
+1. **System prompt**: the whole file `prompts/classify_v002.md` (the default; v001 is kept for comparison), identical for every call. It is the instruction manual: the task, a warning that filing text is data and not instructions, the eight labels with definitions, what "material" means, how to treat added and removed paragraphs, and the rules for `uncertain`, `confidence` and `evidence_quotes`. It contains no specific paragraph.
+2. **User message**: built fresh for each change by `build_user_message` in `src/edgar_diff/llm/classify.py`. It holds the section (e.g. `10-K/9A`), the change kind, `<old_text>`, `<new_text>` and `<word_diff>`. An added paragraph has only the new text, and a removed one only the old text. Added and removed paragraphs also get a `<closest_paragraph_in_other_filing>` tag when the other filing has a similar paragraph (similarity 0.70 or higher). It carries the similarity score, the section, and `already_matched_to_another_paragraph`, so the model can check whether the text was only moved or folded into another paragraph. v002 explains this tag; v001 does not.
 
 The reply is forced into a fixed JSON shape by `src/edgar_diff/llm/schema.py`: `label`, `secondary_label`, `is_material`, `confidence`, `rationale`, `evidence_quotes`, `uncertainty_reason`. The prompt only explains what the fields mean; the schema itself is sent separately through the API's structured-output setting.
 
@@ -109,7 +109,7 @@ Why it is saved:
 - **Caching.** A result is reused only when `(change_id, prompt_sha256, model_id)` all match. Edit the prompt and the hash changes, so the next run classifies everything again and saves new rows beside the old ones. Nothing is overwritten.
 - **The eval gate.** Comparing results from the old hash with the new one is how a prompt change gets checked for regressions.
 
-Check it yourself: `sha256sum prompts/classify_v001.md` prints the same code that is in the database.
+Check it yourself: `sha256sum prompts/classify_v002.md` prints the same code that is in the database.
 
 What the hash does **not** cover: the user message is built by code and the output schema is a separate file, so a change to either is not captured by `prompt_sha256`. Git history records those for now. When the eval gate is built, all three should count as one prompt version.
 
@@ -132,7 +132,9 @@ Don't change the prompt blind. The intended order: hand-label the 40 results (st
 
 ### Known behavior
 
-- All 9 `uncertain` answers in the first run were removed paragraphs. The model cannot tell whether a removal is a real drop, a move, or a rewrite elsewhere. Several were bare headings. Planned fixes: skip heading-like blocks before the LLM, and show the model the closest paragraph in the other filing as a hint.
+- With v001, 9 of 40 answers were `uncertain`, all removed paragraphs: the model could not tell a real drop from a move or a rewrite elsewhere, and several were bare headings. Both planned fixes are now in. Heading-like blocks are skipped before the LLM (16 on Apple), and added/removed paragraphs carry the closest-paragraph hint (26 on Apple).
+- On the same 37 changes, v002 gave 0 `uncertain` against 7 for v001. That could be better judgment or overconfidence: several removed paragraphs with no hint now get confident labels. Only hand labels can tell which, which is what the eval step is for.
+- `--from-run RUN_ID` classifies exactly the changes of an earlier run, so two prompts can be compared on the same sample.
 - Current models reject `temperature`, so runs cannot be pinned to temperature 0. Repeatability comes from the result cache and from the eval measuring run-to-run variation.
 - Refusals, truncated replies and schema failures are saved as `uncertain` with that reason. The optional server-side refusal fallback is not enabled.
 
@@ -157,15 +159,15 @@ cp .env.example .env                 # then edit .env
 uv run pytest -q
 ```
 
-Expected: `17 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+Expected: `23 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
 
 | Test file | What it checks |
 |---|---|
 | `tests/test_client.py` | the EDGAR client keeps only 10-K, 10-K405 and 10-K/A filings |
 | `tests/test_parse.py` | Item sections and paragraphs are found; the hidden XBRL header and page footers are dropped; paragraph IDs are stable; small tables survive |
 | `tests/test_align.py` | sections are matched, added or removed by Item key |
-| `tests/test_diff.py` | unchanged / modified / removed / added (the A, B, C, D example), date-only changes skipped, a one-digit figure change is not skipped, a paragraph moved between sections is a move, years followed by a comma or period are masked |
-| `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly, evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
+| `tests/test_diff.py` | unchanged / modified / removed / added (the A, B, C, D example), date-only changes skipped, a one-digit figure change is not skipped, a paragraph moved between sections is a move, years followed by a comma or period are masked, heading-like blocks are skipped, the closest-paragraph hint is attached (and a short paragraph inside a long one is not a false hint) |
+| `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly (including the hint tag), evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
 | `tests/test_env.py` | the `.env` loader accepts `export KEY = value` |
 
 Run one file or one test:

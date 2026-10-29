@@ -46,7 +46,8 @@ def main() -> None:
     cl.add_argument("--sample", type=int, default=40, help="number of changes (0 = all)")
     cl.add_argument("--seed", type=int, default=0)
     cl.add_argument("--model", default=clf.DEFAULT_MODEL)
-    cl.add_argument("--prompt", default="classify_v001")
+    cl.add_argument("--prompt", default="classify_v002")
+    cl.add_argument("--from-run", help="classify the same changes as this earlier run_id")
     cl.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
     args = p.parse_args()
 
@@ -92,7 +93,14 @@ def main() -> None:
         path = Path("data/diffs") / f"{args.old_accession}__{args.new_accession}.changes.json"
         res = DiffResult.model_validate_json(path.read_text())
         todo = [c for c in res.changes if c.needs_llm]
-        picked = clf.sample_changes(todo, args.sample or len(todo), args.seed)
+        if args.from_run:
+            ids = {r[0] for r in clf.open_db(Path("data/edgar.db")).execute(
+                "SELECT change_id FROM classifications WHERE run_id=?", (args.from_run,))}
+            picked = [c for c in todo if c.change_id in ids]
+            print(f"{len(ids) - len(picked)} of the {len(ids)} changes in run {args.from_run} "
+                  f"no longer need the LLM (headings, date-only)")
+        else:
+            picked = clf.sample_changes(todo, args.sample or len(todo), args.seed)
         system, _ = clf.load_prompt(args.prompt)
         est = clf.estimate_cost([clf.build_user_message(c) for c in picked], system)
         print(f"{len(picked)} of {len(todo)} changes; ~{est['input_tokens']:,} input / "

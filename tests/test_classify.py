@@ -81,3 +81,15 @@ def test_schema_failure_and_refusal_become_uncertain(tmp_path):
                          model="m", log=lambda *_: None)
     rows = dict(db.execute("SELECT change_id, uncertainty_reason FROM classifications"))
     assert rows == {"chg-1": "schema_failure", "chg-2": "refusal"}
+
+
+def test_hint_is_shown_and_allowed_as_evidence():
+    from edgar_diff.diff.paragraphs import Hint
+    c = _change(1, kind="removed", old="Old risk text.", new=None)
+    c.hint = Hint(paragraph_id="n9", section="10-K/1A", text="Reworded risk text here.",
+                  similarity=0.91, already_matched=False)
+    m = clf.build_user_message(c)
+    assert 'similarity="0.91"' in m and 'already_matched_to_another_paragraph="false"' in m
+    assert "Reworded risk text here." in m
+    assert clf.evidence_grounded(["Reworded risk text here"], c)
+    assert not clf.evidence_grounded(["Reworded risk text here"], _change(2, kind="removed", old="Old risk text.", new=None))

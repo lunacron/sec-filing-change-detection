@@ -76,3 +76,47 @@ def test_year_followed_by_comma_or_period_is_masked():
     assert mask_dates("the fourth quarter of 2024, which were") == "the fourth quarter of <yr>, which were"
     assert mask_dates("ended in 2024.") == "ended in <yr>."
     assert mask_dates("a total of 2024,500 units") == "a total of 2024,500 units"
+
+
+def test_heading_like_blocks_are_skipped():
+    old = _filing("o", {"10-K/1A": ["Macroeconomic and Industry Risks", "A real sentence about risk."]})
+    new = _filing("n", {"10-K/1A": ["A real sentence about risk."]})
+    r = _diff(old, new)
+    (c,) = r.changes
+    assert c.kind == "removed" and c.skip_reason == "heading" and not c.needs_llm
+    assert r.summary["skipped_heading"] == 1 and r.summary["needs_llm"] == 0
+
+
+def test_heading_rule():
+    from edgar_diff.diff.paragraphs import is_heading_like
+    assert is_heading_like("Digital Markets Act Investigations")
+    assert not is_heading_like("The Company is subject to legal proceedings.")
+    assert not is_heading_like("Net sales were $391 billion")  # has digits
+    assert not is_heading_like("Segment | Net sales")  # table row
+    assert not is_heading_like("A short sentence.")
+
+
+def test_removed_paragraph_gets_hint_when_reworded_elsewhere():
+    text = "The Company depends on a limited number of single-source suppliers for key components."
+    reworded = "The Company relies on a limited number of single-source suppliers for certain key components of its products."
+    old = _filing("o", {"10-K/1": [text], "10-K/1A": ["Other risk."]})
+    new = _filing("n", {"10-K/1": ["Unrelated business paragraph here."], "10-K/1A": ["Other risk.", reworded]})
+    r = _diff(old, new)
+    removed = [c for c in r.changes if c.kind == "removed"]
+    assert removed and removed[0].hint and removed[0].hint.section == "10-K/1A"
+    assert removed[0].hint.similarity >= 0.7 and not removed[0].hint.already_matched
+
+
+def test_unrelated_removal_has_no_hint():
+    old = _filing("o", {"10-K/3": ["The Company has a dispute with a supplier in Taiwan."]})
+    new = _filing("n", {"10-K/3": ["Quarterly revenue grew because of new product launches."]})
+    removed = [c for c in _diff(old, new).changes if c.kind == "removed"]
+    assert removed[0].hint is None
+
+
+def test_short_text_inside_long_paragraph_is_not_a_hint():
+    long_removed = "On October 31, 2025, the Company announced a change in its principal accounting officer role."
+    old = _filing("o", {"10-K/9B": [long_removed]})
+    new = _filing("n", {"10-K/9B": ["Debt", "Unrelated closing statement about something else entirely."]})
+    removed = [c for c in _diff(new, old).changes if c.kind == "added"]  # long text is the source
+    assert removed[0].hint is None or removed[0].hint.text != "Debt"
