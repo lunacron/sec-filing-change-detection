@@ -169,6 +169,9 @@ def run_eval(*, changes_path: Path, prompt: str, model: str, db: sqlite3.Connect
              log=print) -> int:
     """Returns the process exit code: 0 pass, 1 fail."""
     gold = load_gold(gold_dir)
+    if not changes_path.exists():
+        raise EvalError(f"{changes_path} not found. Run `edgar diff <old> <new>` first, "
+                        "and check both accession numbers.")
     res = DiffResult.model_validate_json(changes_path.read_text())
     check_gold_present(gold, res.changes)
     thresholds = {**DEFAULT_THRESHOLDS, **load_json(gold_dir / "thresholds.json", {})}

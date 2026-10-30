@@ -146,3 +146,11 @@ def test_unclassified_changes_need_a_client(setup):
     with pytest.raises(runner.EvalError, match="ANTHROPIC_API_KEY"):
         runner.run_eval(changes_path=path, prompt="classify_t", model="m", db=db, client=None,
                         gold_dir=d, log=lambda *_: None)
+
+
+def test_missing_changes_file_gives_a_clear_error(setup):
+    tmp, db, sha = setup
+    d = _gold_dir(tmp, {"chg-1": {"label": "risk_factor"}}, {})
+    with pytest.raises(runner.EvalError, match="edgar diff"):
+        runner.run_eval(changes_path=tmp / "nope.json", prompt="classify_t", model="m", db=db,
+                        client=None, gold_dir=d, log=lambda *_: None)

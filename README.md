@@ -166,6 +166,31 @@ It sends only the golden-set changes that have no saved answer for this prompt a
 
 **It stops instead of scoring** when a gold `change_id` is not in the current `changes.json`, or no longer goes to the LLM. That happens if the filings or the diff rules change, and scoring the rest would be misleading.
 
+### Testing the eval runner
+
+None of these cost money.
+
+```bash
+# 1. Unit tests (no internet, no API key). Expect "33 passed".
+uv run pytest -q
+uv run pytest tests/test_eval.py -q          # only the eval runner's tests
+
+# 2. Score the real golden set. Every answer is already saved for v002,
+#    so this makes no API calls.
+uv run edgar eval <old accession> <new accession> --dry-run   # "57 already classified, 0 to run"
+uv run edgar eval <old accession> <new accession>             # scores, then PASS
+echo $?                                                       # 0 = pass, 1 = fail
+```
+
+**See it fail on purpose.** A gate you have only seen pass is not proven.
+1. In `eval/thresholds.json`, change `"holdout_strict_min": 0.60` to `0.90`.
+2. Run `uv run edgar eval ...` again. Expect `FAIL`, a line saying the holdout exact-label score is below the minimum, and `echo $?` printing `1`.
+3. Change it back to `0.60`.
+
+**See it refuse a wrong input.** Run it with a second accession number that has no diff (for example `0000320193-25-000000`). It stops with "... not found. Run `edgar diff <old> <new>` first" and scores nothing.
+
+A new prompt (`--prompt classify_v003`) runs the model on all 57 changes, about $0.50. Use `--dry-run` first to see the estimate.
+
 Limits to keep in mind:
 - Models don't accept `temperature`, so the same prompt can score slightly differently on a fresh run. That is why a small number of new failures is allowed.
 - The practice set was used to write v002, so its score is optimistic. Use the holdout score. When a prompt is tuned using the holdout set's mistakes, draw and label a new holdout set.
@@ -193,7 +218,7 @@ cp .env.example .env                 # then edit .env
 uv run pytest -q
 ```
 
-Expected: `32 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+Expected: `33 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
 
 | Test file | What it checks |
 |---|---|
