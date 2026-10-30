@@ -1,0 +1,231 @@
+{
+ "chg-95feeff030d8": {
+  "label": "business_operations",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-5b2b3913c1c8": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "governance_management"
+ },
+ "chg-617eef44e80d": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-6fb9c82d60a4": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-73542f305cbf": {
+  "label": "governance_management",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-bebbbf5929fa": {
+  "label": "governance_management",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-ccc17abb3bf4": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-d3df020f54e4": {
+  "label": "accounting_policy",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-5c49e50bf364": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "risk_factor"
+ },
+ "chg-d26fb88b1f5e": {
+  "label": "accounting_policy",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "financial_results"
+ },
+ "chg-3c550baa83f7": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-52a06b6fb334": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-5a9a94371b33": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "non_material"
+ },
+ "chg-5c38dda3f53b": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-630081c45633": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "non_material"
+ },
+ "chg-778ec16434d8": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-851a45324a6f": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-8ec325da5347": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-9b72703451a8": {
+  "label": "governance_management",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-a1fde56f31e7": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-afe5a136f4f1": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-d53d34c29a48": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "non_material"
+ },
+ "chg-fad6c0791382": {
+  "label": "accounting_policy",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-19fdcaaff81a": {
+  "label": "legal_regulatory",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-2fd998ad3a6c": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-54530c5a68fe": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-6409e0e1167b": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-674a364a4163": {
+  "label": "legal_regulatory",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-72e0d2a924d6": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-88ed07acc67a": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-8c38b49dc19f": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-8ef88102649a": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-c50dbe4e6064": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-cb8b1082c383": {
+  "label": "non_material",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-d7d3a6c0d496": {
+  "label": "governance_management",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-e887491702ee": {
+  "label": "risk_factor",
+  "secondary": null,
+  "note": "",
+  "status": "confirmed"
+ },
+ "chg-f6f19aadb9d0": {
+  "label": "financial_results",
+  "secondary": null,
+  "note": "",
+  "status": "adjudicated_after_seeing_model",
+  "original_label": "non_material"
+ }
+}

@@ -1,0 +1,142 @@
+{
+ "chg-a9ab7a31ce06": {
+  "case": 1,
+  "label": "non_material",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-65d127e1ae3c": {
+  "case": 2,
+  "label": "business_operations",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-9cdc584145a1": {
+  "case": 3,
+  "label": "risk_factor",
+  "second": "non_material",
+  "material": false,
+  "note": ""
+ },
+ "chg-0d971c98ab1e": {
+  "case": 4,
+  "label": "financial_results",
+  "second": "governance_management",
+  "material": true,
+  "note": ""
+ },
+ "chg-a94992e27ae2": {
+  "case": 5,
+  "label": "financial_results",
+  "second": "governance_management",
+  "material": true,
+  "note": ""
+ },
+ "chg-2f96977752ea": {
+  "case": 6,
+  "label": "non_material",
+  "second": "business_operations",
+  "material": false,
+  "note": ""
+ },
+ "chg-1ba74259cea8": {
+  "case": 7,
+  "label": "accounting_policy",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-f719155a095b": {
+  "case": 8,
+  "label": "financial_results",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-618109b361a7": {
+  "case": 9,
+  "label": "financial_results",
+  "second": null,
+  "material": true,
+  "note": ""
+ },
+ "chg-487775422689": {
+  "case": 10,
+  "label": "business_operations",
+  "second": "financial_results",
+  "material": true,
+  "note": ""
+ },
+ "chg-932454393d1c": {
+  "case": 11,
+  "label": "risk_factor",
+  "second": "non_material",
+  "material": false,
+  "note": ""
+ },
+ "chg-49dbb1b8c5b5": {
+  "case": 12,
+  "label": "financial_results",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-4d6c46c64eaa": {
+  "case": 13,
+  "label": "financial_results",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-818074622383": {
+  "case": 14,
+  "label": "risk_factor",
+  "second": "non_material",
+  "material": false,
+  "note": ""
+ },
+ "chg-ef11271e0059": {
+  "case": 15,
+  "label": "non_material",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-786a7801c51b": {
+  "case": 16,
+  "label": "business_operations",
+  "second": "non_material",
+  "material": false,
+  "note": ""
+ },
+ "chg-a8281dc54f9b": {
+  "case": 17,
+  "label": "risk_factor",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-a987d3ff09e7": {
+  "case": 18,
+  "label": "risk_factor",
+  "second": null,
+  "material": false,
+  "note": ""
+ },
+ "chg-809ad6c9a0fc": {
+  "case": 19,
+  "label": "risk_factor",
+  "second": "business_operations",
+  "material": false,
+  "note": ""
+ },
+ "chg-84674aa7c4ed": {
+  "case": 20,
+  "label": "non_material",
+  "second": "risk_factor",
+  "material": false,
+  "note": ""
+ }
+}

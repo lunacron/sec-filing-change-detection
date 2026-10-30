@@ -2,11 +2,16 @@
 
 How the pipeline runs for Apple (CIK 320193). Only the classify step calls the LLM. Everything else is plain code and costs nothing.
 
-The diagrams use Mermaid. They render on GitHub and in VS Code with a Markdown preview that supports Mermaid.
+The diagrams are draw.io files in [diagrams/](diagrams/). They show in any Markdown preview, and with the "Draw.io Integration" VS Code extension you can open and edit them. The Mermaid source is kept under each image.
 
 ---
 
 ## First run: the whole pipeline
+
+![First run: the whole pipeline](diagrams/first-run.drawio.svg)
+
+<details>
+<summary>Mermaid source for this diagram</summary>
 
 ```mermaid
 flowchart TD
@@ -28,6 +33,8 @@ flowchart TD
     L --> P
 ```
 
+</details>
+
 ---
 
 ## What the diff files are
@@ -45,6 +52,11 @@ Both files are named `<old accession>__<new accession>` (older filing first). Th
 
 The system prompt (`prompts/classify_v002.md`) is the same file every run. What happens depends on what changed.
 
+![Second run](diagrams/second-run.drawio.svg)
+
+<details>
+<summary>Mermaid source for this diagram</summary>
+
 ```mermaid
 flowchart TD
     R["Run the pipeline again"] --> Q{"Same two filings?"}
@@ -57,6 +69,8 @@ flowchart TD
     X --> Y["classify: new messages, new API calls<br/>same system prompt"]
     Y --> P2[("added to edgar.db")]
 ```
+
+</details>
 
 Two other things also trigger new API calls on the same filings:
 

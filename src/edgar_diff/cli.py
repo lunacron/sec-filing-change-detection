@@ -48,6 +48,7 @@ def main() -> None:
     cl.add_argument("--model", default=clf.DEFAULT_MODEL)
     cl.add_argument("--prompt", default="classify_v002")
     cl.add_argument("--from-run", help="classify the same changes as this earlier run_id")
+    cl.add_argument("--ids-file", help="JSON file with a change_ids list (e.g. eval/holdout_ids.json)")
     cl.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
     args = p.parse_args()
 
@@ -99,6 +100,10 @@ def main() -> None:
             picked = [c for c in todo if c.change_id in ids]
             print(f"{len(ids) - len(picked)} of the {len(ids)} changes in run {args.from_run} "
                   f"no longer need the LLM (headings, date-only)")
+        elif args.ids_file:
+            wanted = set(json.loads(Path(args.ids_file).read_text())["change_ids"])
+            picked = [c for c in todo if c.change_id in wanted]
+            print(f"{len(picked)} of the {len(wanted)} change_ids in {args.ids_file} found")
         else:
             picked = clf.sample_changes(todo, args.sample or len(todo), args.seed)
         system, _ = clf.load_prompt(args.prompt)
