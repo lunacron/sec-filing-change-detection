@@ -4,7 +4,8 @@
   "label": "non_material",
   "second": null,
   "material": false,
-  "note": ""
+  "note": "",
+  "status": "reviewed_after_seeing_model_kept"
  },
  "chg-65d127e1ae3c": {
   "case": 2,
@@ -17,22 +18,31 @@
   "case": 3,
   "label": "risk_factor",
   "second": "non_material",
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "risk_factor",
+  "original_second": "non_material",
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-0d971c98ab1e": {
   "case": 4,
-  "label": "financial_results",
-  "second": "governance_management",
-  "material": true,
-  "note": ""
+  "label": "non_material",
+  "second": null,
+  "material": false,
+  "note": "",
+  "original_label": "financial_results",
+  "original_second": "governance_management",
+  "original_material": true,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-a94992e27ae2": {
   "case": 5,
   "label": "financial_results",
   "second": "governance_management",
   "material": true,
-  "note": ""
+  "note": "",
+  "status": "reviewed_after_seeing_model_kept"
  },
  "chg-2f96977752ea": {
   "case": 6,
@@ -43,17 +53,25 @@
  },
  "chg-1ba74259cea8": {
   "case": 7,
-  "label": "accounting_policy",
+  "label": "financial_results",
   "second": null,
   "material": false,
-  "note": ""
+  "note": "",
+  "original_label": "accounting_policy",
+  "original_second": null,
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-f719155a095b": {
   "case": 8,
   "label": "financial_results",
   "second": null,
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "financial_results",
+  "original_second": null,
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-618109b361a7": {
   "case": 9,
@@ -80,8 +98,12 @@
   "case": 12,
   "label": "financial_results",
   "second": null,
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "financial_results",
+  "original_second": null,
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-4d6c46c64eaa": {
   "case": 13,
@@ -94,15 +116,20 @@
   "case": 14,
   "label": "risk_factor",
   "second": "non_material",
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "risk_factor",
+  "original_second": "non_material",
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-ef11271e0059": {
   "case": 15,
   "label": "non_material",
   "second": null,
   "material": false,
-  "note": ""
+  "note": "",
+  "status": "reviewed_after_seeing_model_kept"
  },
  "chg-786a7801c51b": {
   "case": 16,
@@ -115,22 +142,34 @@
   "case": 17,
   "label": "risk_factor",
   "second": null,
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "risk_factor",
+  "original_second": null,
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-a987d3ff09e7": {
   "case": 18,
   "label": "risk_factor",
   "second": null,
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "risk_factor",
+  "original_second": null,
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-809ad6c9a0fc": {
   "case": 19,
   "label": "risk_factor",
   "second": "business_operations",
-  "material": false,
-  "note": ""
+  "material": true,
+  "note": "",
+  "original_label": "risk_factor",
+  "original_second": "business_operations",
+  "original_material": false,
+  "status": "adjudicated_after_seeing_model"
  },
  "chg-84674aa7c4ed": {
   "case": 20,
