@@ -56,7 +56,7 @@ It flags and sorts changes. It does not judge investment value. The "material" l
 | 4. Diff | Find added, removed and modified paragraphs; skip date-only changes and bare headings; attach a closest-paragraph hint to added/removed ones | Done |
 | 5. Classify | Schema-constrained LLM classification | Done (prompt v002; 37-change sample run; not yet checked against hand labels) |
 | 6. Ground | Check extracted figures against the source text | Planned |
-| 7. Eval | Regression set with pass/fail thresholds | Planned |
+| 7. Eval | Golden set of hand labels, `edgar eval` with pass/fail thresholds and a saved baseline | Done (57 labeled changes, Apple only) |
 
 See [edgar_plan.md](edgar_plan.md) for the full plan, [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step, and [pipeline_flowchart.md](pipeline_flowchart.md) for flowcharts of a first and second run with real example messages.
 
@@ -138,6 +138,40 @@ Don't change the prompt blind. The intended order: hand-label the 40 results (st
 - Current models reject `temperature`, so runs cannot be pinned to temperature 0. Repeatability comes from the result cache and from the eval measuring run-to-run variation.
 - Refusals, truncated replies and schema failures are saved as `uncertain` with that reason. The optional server-side refusal fallback is not enabled.
 
+## Evaluating a prompt
+
+The golden set is 57 changes whose correct labels were written by hand: `eval/gold_labels.json` (37, the practice set) and `eval/gold_labels_holdout.json` (20, never used to tune a prompt). See [golden_set.md](golden_set.md) for how they were made and [school.md](school.md) for a simple example.
+
+```bash
+uv run edgar eval <old accession> <new accession> --dry-run   # what would run, and what it costs
+uv run edgar eval <old accession> <new accession>             # run and score; exit code 1 if it fails
+uv run edgar eval <old accession> <new accession> --prompt classify_v003 --save-baseline
+```
+
+It sends only the golden-set changes that have no saved answer for this prompt and model, so a repeat run costs $0. `--model` defaults to `claude-sonnet-5-5`.
+
+**What it prints:** the exact-label score on the practice set (blind labels only) and on the holdout set, the holdout score counting your second label, how often `is_material` agrees, and the number of `uncertain` answers.
+
+**Pass or fail.** The run fails if any minimum in `eval/thresholds.json` is not met, or if more than `max_new_failures` changes that the saved baseline got right are now wrong. The current minimums are set just below v002's scores and are a starting point, not a standard:
+
+| Setting | Value |
+|---|---|
+| `practice_blind_strict_min` | 85% |
+| `holdout_strict_min` | 60% |
+| `holdout_lenient_min` | 75% |
+| `holdout_material_min` | 45% |
+| `max_new_failures` | 2 |
+
+**The baseline** (`eval/baseline.json`) records which changes a passing prompt got right. `--save-baseline` writes it only when the run passes. It is the ratchet: later prompts may not break what an earlier one got right. Currently it holds v002.
+
+**It stops instead of scoring** when a gold `change_id` is not in the current `changes.json`, or no longer goes to the LLM. That happens if the filings or the diff rules change, and scoring the rest would be misleading.
+
+Limits to keep in mind:
+- Models don't accept `temperature`, so the same prompt can score slightly differently on a fresh run. That is why a small number of new failures is allowed.
+- The practice set was used to write v002, so its score is optimistic. Use the holdout score. When a prompt is tuned using the holdout set's mistakes, draw and label a new holdout set.
+- Seven practice labels were changed after seeing the model's answer. They count in `practice_all` but not in the blind score the thresholds use.
+- Apple only, one year pair.
+
 ## Setup
 
 ```bash
@@ -159,7 +193,7 @@ cp .env.example .env                 # then edit .env
 uv run pytest -q
 ```
 
-Expected: `23 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+Expected: `32 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
 
 | Test file | What it checks |
 |---|---|
@@ -168,6 +202,7 @@ Expected: `23 passed`. The tests need no internet, no API key and cost nothing: 
 | `tests/test_align.py` | sections are matched, added or removed by Item key |
 | `tests/test_diff.py` | unchanged / modified / removed / added (the A, B, C, D example), date-only changes skipped, a one-digit figure change is not skipped, a paragraph moved between sections is a move, years followed by a comma or period are masked, heading-like blocks are skipped, the closest-paragraph hint is attached (and a short paragraph inside a long one is not a false hint) |
 | `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly (including the hint tag), evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
+| `tests/test_eval.py` | gold labels load (blind or not), exact / lenient / materiality scoring, thresholds fail below the minimum, a change the baseline got right and is now wrong counts as a regression, a failing run never overwrites the baseline, a gold change missing from `changes.json` stops the run |
 | `tests/test_env.py` | the `.env` loader accepts `export KEY = value` |
 
 Run one file or one test:

@@ -1,0 +1,7 @@
+{
+ "practice_blind_strict_min": 0.85,
+ "holdout_strict_min": 0.6,
+ "holdout_lenient_min": 0.75,
+ "holdout_material_min": 0.45,
+ "max_new_failures": 2
+}

@@ -50,6 +50,13 @@ def main() -> None:
     cl.add_argument("--from-run", help="classify the same changes as this earlier run_id")
     cl.add_argument("--ids-file", help="JSON file with a change_ids list (e.g. eval/holdout_ids.json)")
     cl.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
+    ev = sub.add_parser("eval", help="score a prompt against the golden set; exit 1 on regression")
+    ev.add_argument("old_accession")
+    ev.add_argument("new_accession")
+    ev.add_argument("--prompt", default="classify_v002")
+    ev.add_argument("--model", default="claude-sonnet-5-5")
+    ev.add_argument("--save-baseline", action="store_true", help="record a passing run as the new baseline")
+    ev.add_argument("--dry-run", action="store_true", help="show what would run and its cost; make no API calls")
     args = p.parse_args()
 
     if args.cmd == "ingest":
@@ -120,6 +127,23 @@ def main() -> None:
         db = clf.open_db(Path("data/edgar.db"))
         clf.classify_changes(anthropic.Anthropic(), picked, db,
                              prompt_version=args.prompt, model=args.model)
+
+    if args.cmd == "eval":
+        from .eval import runner
+
+        path = Path("data/diffs") / f"{args.old_accession}__{args.new_accession}.changes.json"
+        client = None
+        if os.environ.get("ANTHROPIC_API_KEY") and not args.dry_run:
+            import anthropic
+
+            client = anthropic.Anthropic()
+        try:
+            code = runner.run_eval(changes_path=path, prompt=args.prompt, model=args.model,
+                                   db=clf.open_db(Path("data/edgar.db")), client=client,
+                                   save_baseline=args.save_baseline, dry_run=args.dry_run)
+        except runner.EvalError as e:
+            raise SystemExit(str(e))
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":

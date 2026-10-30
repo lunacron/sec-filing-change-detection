@@ -48,9 +48,9 @@ flowchart TD
 
 ## Using it when the prompt changes
 
-This is the purpose of the set. The runner and thresholds below are **planned and not built yet**.
+This is the purpose of the set. The runner is built: `uv run edgar eval <old> <new>` (see the README, "Evaluating a prompt").
 
-![Using the golden set when the prompt changes (planned)](diagrams/golden-set-use.drawio.svg)
+![Using the golden set when the prompt changes ](diagrams/golden-set-use.drawio.svg)
 
 <details>
 <summary>Mermaid source for this diagram</summary>
