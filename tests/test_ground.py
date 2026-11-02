@@ -88,3 +88,10 @@ def test_extract_caches_a_change_with_no_figures(tmp_path):
     ext.extract_figures(client, [c], db, **kw)
     assert len(client.calls) == 1
     assert db.execute("SELECT n_figures FROM extractions").fetchone() == (0,)
+
+
+def test_number_words_are_found():
+    vals = [n.value for n in find_numbers("A five-year term, three million shares and twenty-five days.")]
+    assert vals == [5.0, 3e6, 25.0]
+    assert number_check(5, "the five-year period") is None
+    assert number_check(3e6, "issued three million shares") is None

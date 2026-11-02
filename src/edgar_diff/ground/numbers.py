@@ -10,8 +10,8 @@ flagged (never dropped) with one of these reasons:
                   (thousand, million, billion) that the paragraph does not state, e.g. a
                   table cell "12,430" that the model turned into 12.43 billion
 
-Limits of this first version: numbers written as words ("three million") are not found, and
-the sign is ignored (a value in parentheses is compared as a positive number).
+Numbers written as words ("five-year", "three million", "twenty-five") are found too, up to
+nineteen, the tens, and "hundred". Limits of this first version: the sign is ignored (a value in parentheses is compared as a positive number).
 """
 import math
 import re
@@ -19,11 +19,25 @@ from dataclasses import dataclass
 
 SCALES = {"thousand": 1e3, "million": 1e6, "billion": 1e9, "trillion": 1e12, "bn": 1e9}
 
+_ONES = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+         "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+         "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+         "eighty": 80, "ninety": 90}
+WORDS = {**_ONES, **_TENS, "hundred": 100}
+
+_WORD = (r"(?:(?:" + "|".join(_TENS) + r")(?:[-\s](?:" + "|".join(list(_ONES)[:9]) + r"))?|"
+         + "|".join(sorted(list(_ONES) + ["hundred"], key=len, reverse=True)) + r")")
 _NUMBER = re.compile(
-    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"(?:(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)|\b(?P<word>" + _WORD + r")\b)"
     r"(?:\s*(?P<scale>thousand|million|billion|trillion|bn)\b)?"
     r"(?P<pct>\s*%|\s+percent\b)?",
     re.IGNORECASE)
+
+
+def _word_value(w: str) -> float:
+    parts = re.split(r"[-\s]", w.lower())
+    return float(sum(WORDS[p] for p in parts))
 
 
 @dataclass(frozen=True)
@@ -43,8 +57,8 @@ def find_numbers(text: str) -> list[FoundNumber]:
     out = []
     for m in _NUMBER.finditer(text):
         scale = SCALES[m.group("scale").lower()] if m.group("scale") else 1.0
-        out.append(FoundNumber(float(m.group("num").replace(",", "")), scale,
-                               bool(m.group("pct")), m.start(), m.end()))
+        digits = float(m.group("num").replace(",", "")) if m.group("num") else _word_value(m.group("word"))
+        out.append(FoundNumber(digits, scale, bool(m.group("pct")), m.start(), m.end()))
     return out
 
 
