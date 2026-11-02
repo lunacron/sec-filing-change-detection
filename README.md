@@ -55,7 +55,7 @@ It flags and sorts changes. It does not judge investment value. The "material" l
 | 3. Align | Pair sections by Item key | Done |
 | 4. Diff | Find added, removed and modified paragraphs; skip date-only changes and bare headings; attach a closest-paragraph hint to added/removed ones | Done |
 | 5. Classify | Schema-constrained LLM classification | Done (prompt v002; 37-change sample run; not yet checked against hand labels) |
-| 6. Ground | Check extracted figures against the source text | Planned |
+| 6. Figures | LLM extracts numbers from changed paragraphs; plain code checks each against the source text | Done (prompt extract_v001; all 94 Apple changes with figures; 10 figures hand-checked) |
 | 7. Eval | Golden set of hand labels, `edgar eval` with pass/fail thresholds and a saved baseline | Done (57 labeled changes, Apple only) |
 
 See [edgar_plan.md](edgar_plan.md) for the full plan, [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step, and [pipeline_flowchart.md](pipeline_flowchart.md) for flowcharts of a first and second run with real example messages.
@@ -138,6 +138,61 @@ Don't change the prompt blind. The intended order: hand-label the 40 results (st
 - Current models reject `temperature`, so runs cannot be pinned to temperature 0. Repeatability comes from the result cache and from the eval measuring run-to-run variation.
 - Refusals, truncated replies and schema failures are saved as `uncertain` with that reason. The optional server-side refusal fallback is not enabled.
 
+## Figure extraction (LLM step plus a code check)
+
+This step turns a changed paragraph into a list of numbers. For "commercial paper was $10.0 billion" (2024) and "$8.0 billion" (2025) it records old = $10.0 billion, new = $8.0 billion, metric = commercial paper outstanding.
+
+1. **Which changes:** only changes that go to the LLM and contain a dollar amount, a percentage, a scaled number ("5 million") or a number with a thousands comma. Years and dates alone do not count. On Apple that is 94 of the 273 changes.
+2. **The LLM** (prompt `prompts/extract_v001.md`) returns, for each figure: `value_as_written`, `normalized_value`, `unit`, `metric`, `period`, `source_quote` and `side` (old or new). It applies a scale (million, billion) only when the text states it next to the number.
+3. **The code check** (`src/edgar_diff/ground/numbers.py`, no LLM) tests two things for each figure. The `source_quote` must appear in the paragraph on the stated side, and a number with the same value must appear in that paragraph. A figure that fails is kept, with `grounded = 0` and a reason:
+
+| Reason | Meaning |
+|---|---|
+| `quote_mismatch` | the quote is not in the paragraph |
+| `not_in_source` | no number in the paragraph has that value |
+| `scale_mismatch` | the digits are there, but the model applied a scale the paragraph does not state |
+
+Tables are the usual case for `scale_mismatch`: a cell "12,430" in a table headed "in millions" stays 12,430, as the prompt says.
+
+### Results on Apple (2024 vs 2025)
+
+| Item | Value |
+|---|---|
+| Changes processed | 94 |
+| Figures extracted | 1,315 |
+| Failed the code check | 0 |
+| Model failures (refusal, cut off, bad format) | 0 |
+| Cost on claude-sonnet-5-5 | about $1.64 for all 94 (the dry-run estimate for 10 was $0.09; the real cost was $0.135) |
+
+### What the check cannot catch
+
+- The model attaching a real number to the wrong description. Only a person can see that. 10 figures were checked by hand ([eval/figure_check_sheet.md](eval/figure_check_sheet.md)) and all were right.
+- A wrong unit label. In a table "in millions" the unit may say `USD` for a value that is really millions of dollars.
+- A lost minus sign. A value in parentheses is compared as a positive number.
+- Numbers in words are found only up to nineteen, the tens and "hundred" ("five-year", "three million", "twenty-five").
+
+### Running it
+
+```bash
+# Cost estimate first. No API call, free.
+uv run edgar extract 0000320193-24-000123 0000320193-25-000079 --sample 10 --dry-run
+
+# 10 changes (about $0.14), then all of them (--sample 0, about $1.60).
+uv run edgar extract 0000320193-24-000123 0000320193-25-000079 --sample 10
+uv run edgar extract 0000320193-24-000123 0000320193-25-000079 --sample 0
+```
+
+Results are cached by change, prompt hash and model, so repeating a run costs nothing, including for changes that had no figures. The command prints how many figures failed the code check and lists them.
+
+### What is in the database
+
+Two tables in `data/edgar.db`:
+
+| Table | Columns |
+|---|---|
+| `extractions` (one row per change) | `change_id`, `old_paragraph_id`, `new_paragraph_id`, `n_figures`, `failure`, `prompt_version`, `prompt_sha256`, `model_id`, `run_id`, `created_at`, `input_hash`, `raw_response`, `input_tokens`, `output_tokens` |
+| `figures` (one row per figure) | `change_id`, `idx`, `side`, `paragraph_id`, `value_as_written`, `normalized_value`, `unit`, `metric`, `period`, `source_quote`, `char_start`, `char_end`, `grounded`, `reason`, plus the same provenance columns |
+
 ## Evaluating a prompt
 
 The golden set is 57 changes whose correct labels were written by hand: `eval/gold_labels.json` (37, the practice set) and `eval/gold_labels_holdout.json` (20, never used to tune a prompt). See [golden_set.md](golden_set.md) for how they were made and [school.md](school.md) for a simple example.
@@ -171,7 +226,7 @@ It sends only the golden-set changes that have no saved answer for this prompt a
 None of these cost money.
 
 ```bash
-# 1. Unit tests (no internet, no API key). Expect "33 passed".
+# 1. Unit tests (no internet, no API key). Expect "41 passed".
 uv run pytest -q
 uv run pytest tests/test_eval.py -q          # only the eval runner's tests
 
@@ -218,7 +273,7 @@ cp .env.example .env                 # then edit .env
 uv run pytest -q
 ```
 
-Expected: `33 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+Expected: `41 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
 
 | Test file | What it checks |
 |---|---|
@@ -228,6 +283,7 @@ Expected: `33 passed`. The tests need no internet, no API key and cost nothing: 
 | `tests/test_diff.py` | unchanged / modified / removed / added (the A, B, C, D example), date-only changes skipped, a one-digit figure change is not skipped, a paragraph moved between sections is a move, years followed by a comma or period are masked, heading-like blocks are skipped, the closest-paragraph hint is attached (and a short paragraph inside a long one is not a false hint) |
 | `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly (including the hint tag), evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
 | `tests/test_eval.py` | gold labels load (blind or not), exact / lenient / materiality scoring, thresholds fail below the minimum, a change the baseline got right and is now wrong counts as a regression, a failing run never overwrites the baseline, a gold change missing from `changes.json` stops the run |
+| `tests/test_ground.py` | numbers are found with scales, commas, percent and number words; a figure is checked against the paragraph (invented values, wrong scale and near-misses like 1.2 vs 12 are flagged); extraction stores grounded and flagged figures and caches results, including changes with no figures |
 | `tests/test_env.py` | the `.env` loader accepts `export KEY = value` |
 
 Run one file or one test:
@@ -291,6 +347,7 @@ What each step leaves behind (all under `data/`, which is git-ignored):
 | 3 align | `data/diffs/<old>__<new>.alignment.json` |
 | 4 diff | `data/diffs/<old>__<new>.changes.json` |
 | 6 classify | rows in `data/edgar.db` |
+| 7 extract | rows in the `extractions` and `figures` tables of `data/edgar.db` |
 
 ## Checking the database
 
