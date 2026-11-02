@@ -20,6 +20,21 @@ class Classification(BaseModel):
     uncertainty_reason: str | None
 
 
+class Figure(BaseModel):
+    """One number the model found in a changed paragraph. Every field is required."""
+    value_as_written: str
+    normalized_value: float
+    unit: str
+    metric: str
+    period: str | None
+    source_quote: str
+    side: Literal["old", "new"]
+
+
+class Extraction(BaseModel):
+    figures: list[Figure]
+
+
 def strict_schema(model: type[BaseModel]) -> dict:
     """JSON Schema with additionalProperties=false on every object, for structured outputs."""
     schema = model.model_json_schema()

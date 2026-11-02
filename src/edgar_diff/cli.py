@@ -50,6 +50,14 @@ def main() -> None:
     cl.add_argument("--from-run", help="classify the same changes as this earlier run_id")
     cl.add_argument("--ids-file", help="JSON file with a change_ids list (e.g. eval/holdout_ids.json)")
     cl.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
+    ex = sub.add_parser("extract", help="LLM-extract numeric figures from changes, then check them in code")
+    ex.add_argument("old_accession")
+    ex.add_argument("new_accession")
+    ex.add_argument("--sample", type=int, default=10, help="number of changes (0 = all with figures)")
+    ex.add_argument("--seed", type=int, default=0)
+    ex.add_argument("--model", default="claude-sonnet-5-5")
+    ex.add_argument("--prompt", default="extract_v001")
+    ex.add_argument("--dry-run", action="store_true", help="estimate cost; make no API calls")
     ev = sub.add_parser("eval", help="score a prompt against the golden set; exit 1 on regression")
     ev.add_argument("old_accession")
     ev.add_argument("new_accession")
@@ -127,6 +135,31 @@ def main() -> None:
         db = clf.open_db(Path("data/edgar.db"))
         clf.classify_changes(anthropic.Anthropic(), picked, db,
                              prompt_version=args.prompt, model=args.model)
+
+    if args.cmd == "extract":
+        from .llm import extract as ext
+
+        path = Path("data/diffs") / f"{args.old_accession}__{args.new_accession}.changes.json"
+        res = DiffResult.model_validate_json(path.read_text())
+        pool = [c for c in res.changes if ext.has_figures(c)]
+        picked = clf.sample_changes(pool, args.sample or len(pool), args.seed)
+        system, sha = clf.load_prompt(args.prompt)
+        est = clf.estimate_cost([ext.build_extract_message(c) for c in picked], system)
+        print(f"{len(picked)} of {len(pool)} changes with figures; ~{est['input_tokens']:,} input / "
+              f"~{est['output_tokens']:,} output tokens (rough estimate)")
+        print("estimated USD by model:", est["usd"])
+        if args.dry_run:
+            return
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise SystemExit("ANTHROPIC_API_KEY is not set (add it to .env)")
+        import anthropic
+
+        db = clf.open_db(Path("data/edgar.db"))
+        ext.extract_figures(anthropic.Anthropic(), picked, db, prompt_version=args.prompt, model=args.model)
+        rep = ext.report(db, sha, args.model, {c.change_id for c in picked})
+        print(f"{rep['figures']} figures, {rep['ungrounded']} not grounded")
+        for cid, side, written, metric, _, reason in rep["bad"]:
+            print(f"  NOT GROUNDED {cid} {side}: {written} ({metric}) -> {reason}")
 
     if args.cmd == "eval":
         from .eval import runner
