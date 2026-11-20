@@ -113,4 +113,4 @@ Rule: once a set has been used to tune a prompt, it stops being a fair test. Kee
 
 ## Where it fits
 
-The golden set is step 8 of [edgar_plan.md](edgar_plan.md) (the evaluation). See [pipeline_flowchart.md](pipeline_flowchart.md) for the pipeline that produces the changes being labeled.
+The golden set is the evaluation step of the pipeline. See [pipeline_flowchart.md](pipeline_flowchart.md) for the pipeline that produces the changes being labeled.

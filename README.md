@@ -58,7 +58,7 @@ It flags and sorts changes. It does not judge investment value. The "material" l
 | 6. Figures | LLM extracts numbers from changed paragraphs; plain code checks each against the source text | Done (prompt extract_v001; all 94 Apple changes with figures; 10 figures hand-checked) |
 | 7. Eval | Golden set of hand labels, `edgar eval` with pass/fail thresholds and a saved baseline | Done (57 labeled changes, Apple only) |
 
-See [edgar_plan.md](edgar_plan.md) for the full plan, [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step, and [pipeline_flowchart.md](pipeline_flowchart.md) for flowcharts of a first and second run with real example messages.
+See [how_it_works.md](how_it_works.md) for a plain-language overview, [paragraph_diff_explained.md](paragraph_diff_explained.md) for a worked example of the diff step, and [pipeline_flowchart.md](pipeline_flowchart.md) for flowcharts of a first and second run with real example messages.
 
 ## Classification (LLM step)
 
@@ -265,7 +265,7 @@ uv run edgar batch-collect                                                  # la
 
 ## Evaluating a prompt
 
-The golden set is 57 changes whose correct labels were written by hand: `eval/gold_labels.json` (37, the practice set) and `eval/gold_labels_holdout.json` (20, never used to tune a prompt). See [golden_set.md](golden_set.md) for how they were made and [school.md](school.md) for a simple example.
+The golden set is 57 changes whose correct labels were written by hand: `eval/gold_labels.json` (37, the practice set) and `eval/gold_labels_holdout.json` (20, never used to tune a prompt). See [golden_set.md](golden_set.md) for how they were made.
 
 ```bash
 uv run edgar eval <old accession> <new accession> --dry-run   # what would run, and what it costs
