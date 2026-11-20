@@ -193,6 +193,76 @@ Two tables in `data/edgar.db`:
 | `extractions` (one row per change) | `change_id`, `old_paragraph_id`, `new_paragraph_id`, `n_figures`, `failure`, `prompt_version`, `prompt_sha256`, `model_id`, `run_id`, `created_at`, `input_hash`, `raw_response`, `input_tokens`, `output_tokens` |
 | `figures` (one row per figure) | `change_id`, `idx`, `side`, `paragraph_id`, `value_as_written`, `normalized_value`, `unit`, `metric`, `period`, `source_quote`, `char_start`, `char_end`, `grounded`, `reason`, plus the same provenance columns |
 
+## Cost, latency and batch mode
+
+Every LLM call (classify and extract) saves what it used, so real cost can be added up and the next run can be estimated from it.
+
+| Saved per call | Column | Notes |
+|---|---|---|
+| Tokens used | `input_tokens`, `output_tokens` | from the API response |
+| How it ran | `mode` | `standard` or `batch` |
+| Time taken | `duration_ms` | normal calls only; empty for batch calls and for calls saved before this tracking began |
+| Size of the input | `input_chars` | system prompt plus message; the estimator uses it |
+| Cached tokens | `cache_read_tokens`, `cache_write_tokens` | prompt-cache use, priced separately (see below); `input_tokens` counts only the uncached part |
+| Which batch | `batch_id` | batch calls only |
+
+### See what you spent
+
+```bash
+uv run edgar cost
+```
+
+It prints calls, tokens, dollars and median / 95th-percentile latency for each step, prompt, model and mode. Batch calls are priced at 50%. Prices are typed into `src/edgar_diff/cost.py` (`PRICES`), so update them when Anthropic changes them.
+
+### Estimate before you run
+
+`--dry-run` on `edgar classify` and `edgar extract` prints the cost both ways, normal and batch, plus the expected time:
+
+```bash
+uv run edgar classify OLD NEW --sample 0 --model claude-sonnet-5-5 --dry-run
+```
+
+The estimate learns from earlier calls of the same step. It counts cached prompt tokens too, and when earlier calls used the cache it assumes one cache write for the run and reads for the rest. Methods, best first:
+
+1. tokens per character, once at least 10 earlier calls saved their input size;
+2. the average tokens per call from all earlier calls (less exact);
+3. a rough guess (4 characters per token), only when there is no history.
+
+It says which method it used. Changes that are already saved are not counted, because they cost nothing. The old estimate was about 2x too low for figure extraction, so treat estimates from method 2 as rough.
+
+### Prompt caching (classify only)
+
+The classify system prompt is identical on every call, so it is marked for Anthropic's prompt caching (`cache_control` on the system block in `classify.request_params`). The first call of a run writes it to the cache; later calls read it.
+
+| Token kind | Price on claude-sonnet-5-5 |
+|---|---|
+| normal input | $2.00 per million |
+| cache write | 1.25x input for the default 5-minute lifetime, 2x for the 1-hour lifetime (used for batch requests) |
+| cache read | $0.10 per million (0.05x input) |
+
+- Measured on 6 real calls: 2,124 tokens are cached per call (more than the prompt text alone). Those 6 calls cost $0.019 against $0.038 without caching (50% less, including the write). Once the cache is warm, a call costs about $0.0023 against $0.0064.
+- The cache lives 5 minutes and every read refreshes it, so a normal run, with calls seconds apart, keeps it warm. In a batch the requests run concurrently, so hits are best-effort and the estimate for batch assumes they hit.
+- `prompt_sha256` is unchanged, so earlier saved results stay valid: caching changes the price, not the answers.
+- `extract_v001` is not cached. It is about 500 tokens, at the edge of the 512-token minimum, and only about 6% of a call's cost.
+- Check it worked: `edgar cost` shows `cache rd` and `cache wr` columns. If `cache rd` stays at 0 across a run, the prefix is not being cached.
+- The prices of cache reads are in `PRICES` in `src/edgar_diff/cost.py` (the Haiku value is an unchecked 0.1x).
+
+### Batch mode: half price, but not immediate
+
+Add `--batch` to `classify` or `extract`. All changes go to Anthropic in one batch and the command returns at once. Batches usually finish within an hour and always within 24 hours.
+
+```bash
+uv run edgar classify OLD NEW --sample 0 --model claude-sonnet-5-5 --batch   # submit
+uv run edgar batch-status                                                   # list batches
+uv run edgar batch-collect                                                  # later: save finished batches
+```
+
+- `batch-collect` saves the results into the same tables as normal calls (same checks, `mode = 'batch'`). Without an ID it checks every open batch.
+- Changes already saved, or already waiting in an open batch, are not sent again.
+- A change that errored or expired is not saved, so the next run sends it again.
+- Batch latency is the time from creation to the end of the batch, kept in the `batches` table and used by the estimator.
+- Use normal calls when you need an answer now (for example while working on a prompt). Use batch for large, non-urgent runs.
+
 ## Evaluating a prompt
 
 The golden set is 57 changes whose correct labels were written by hand: `eval/gold_labels.json` (37, the practice set) and `eval/gold_labels_holdout.json` (20, never used to tune a prompt). See [golden_set.md](golden_set.md) for how they were made and [school.md](school.md) for a simple example.
@@ -226,7 +296,7 @@ It sends only the golden-set changes that have no saved answer for this prompt a
 None of these cost money.
 
 ```bash
-# 1. Unit tests (no internet, no API key). Expect "41 passed".
+# 1. Unit tests (no internet, no API key). Expect "60 passed".
 uv run pytest -q
 uv run pytest tests/test_eval.py -q          # only the eval runner's tests
 
@@ -273,7 +343,7 @@ cp .env.example .env                 # then edit .env
 uv run pytest -q
 ```
 
-Expected: `41 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
+Expected: `60 passed`. The tests need no internet, no API key and cost nothing: they use small made-up filings and a fake API client, never the SEC or Anthropic.
 
 | Test file | What it checks |
 |---|---|
@@ -284,6 +354,8 @@ Expected: `41 passed`. The tests need no internet, no API key and cost nothing: 
 | `tests/test_classify.py` | the output schema is strict, the sample is reproducible and always includes Item 3, the user message is built correctly (including the hint tag), evidence quotes are checked against the source, results are stored with provenance and cached, refusals and bad JSON become `uncertain` |
 | `tests/test_eval.py` | gold labels load (blind or not), exact / lenient / materiality scoring, thresholds fail below the minimum, a change the baseline got right and is now wrong counts as a regression, a failing run never overwrites the baseline, a gold change missing from `changes.json` stops the run |
 | `tests/test_ground.py` | numbers are found with scales, commas, percent and number words; a figure is checked against the paragraph (invented values, wrong scale and near-misses like 1.2 vs 12 are flagged); extraction stores grounded and flagged figures and caches results, including changes with no figures |
+| `tests/test_cost.py` | batch is exactly half price, calls save mode, latency and input size, old databases are migrated, the report groups by mode, the estimator uses tokens per character only with enough history and falls back to averages and then a guess, batch time comes from finished batches, cache reads and writes are priced at their own rates and saved with each call, the classify system prompt is marked for caching (1-hour for batch) and extract is not, the estimate assumes one cache write then reads |
+| `tests/test_batch.py` | a batch has one request per change with the same settings as a normal call, saved or waiting changes are not sent again, collect saves results as batch calls with the same checks, a running batch is left alone, failed or expired changes are not saved and are sent again, extraction works through batch too |
 | `tests/test_env.py` | the `.env` loader accepts `export KEY = value` |
 
 Run one file or one test:

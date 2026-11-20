@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .. import cost
 from ..diff.paragraphs import Change, DiffResult
 from ..llm import classify as clf
 
@@ -184,8 +185,9 @@ def run_eval(*, changes_path: Path, prompt: str, model: str, db: sqlite3.Connect
     log(f"golden set: {len(gold)} changes; prompt {prompt} ({sha[:12]}), model {model}; "
         f"{len(gold) - len(todo)} already classified, {len(todo)} to run")
     if todo:
-        est = clf.estimate_cost([clf.build_user_message(c) for c in todo], system)
-        log(f"estimated cost of the new calls: ${est['usd'].get(model, '?')}")
+        est = cost.estimate(db, "classify", model, prompt, [len(system) + len(clf.build_user_message(c)) for c in todo])
+        for line in cost.format_estimate(est):
+            log(line)
     if dry_run:
         return 0
     if todo:

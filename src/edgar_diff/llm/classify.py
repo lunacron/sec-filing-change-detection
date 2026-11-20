@@ -4,6 +4,7 @@ import json
 import random
 import re
 import sqlite3
+import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -11,18 +12,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from ..cost import PRICES, Usage, add_columns
 from ..diff.paragraphs import Change, DiffResult
 from .schema import Classification, strict_schema
 
 PROMPT_DIR = Path("prompts")
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_TOKENS = 16000
-# Cached list prices, USD per 1M tokens (input, output). Estimates only.
-PRICES = {
-    "claude-opus-5-5": (4.00, 20.00),
-    "claude-sonnet-5-5": (2.00, 10.00),
-    "claude-haiku-5-5": (0.10, 0.50),
-}
 EST_OUTPUT_TOKENS = 700  # JSON answer plus low-effort thinking; a guess, see dry-run
 
 
@@ -119,6 +115,7 @@ def open_db(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
     db.execute(SCHEMA)
+    add_columns(db, "classifications")
     return db
 
 
@@ -128,24 +125,72 @@ def _uncertain(reason: str) -> Classification:
                           evidence_quotes=[], uncertainty_reason=reason)
 
 
-def classify_one(client, c: Change, system: str, model: str):
-    """Returns (Classification, raw_text, input_tokens, output_tokens)."""
-    resp = client.messages.create(
+def request_params(c: Change, system: str, model: str, cache_ttl: str | None = None) -> dict:
+    """The arguments of one API call. Used by normal calls and by batch requests alike.
+
+    The system prompt is the same for every call, so it is marked for prompt caching: later calls
+    read it from the cache at a fraction of the input price. `cache_ttl` is None for the default
+    5 minutes (normal calls run seconds apart) or "1h" for batch requests, which can sit far apart.
+    """
+    control = {"type": "ephemeral", **({"ttl": cache_ttl} if cache_ttl else {})}
+    return dict(
         model=model,
         max_tokens=MAX_TOKENS,
-        system=system,
+        system=[{"type": "text", "text": system, "cache_control": control}],
         messages=[{"role": "user", "content": build_user_message(c)}],
         output_config={"effort": "low",
                        "format": {"type": "json_schema", "schema": strict_schema(Classification)}},
     )
-    usage = (resp.usage.input_tokens, resp.usage.output_tokens)
+
+
+def parse_message(resp):
+    """Returns (Classification, raw_text, Usage) from an API message."""
+    usage = Usage.from_api(resp.usage)
     if resp.stop_reason in ("refusal", "max_tokens"):
-        return _uncertain(resp.stop_reason), "", *usage
+        return _uncertain(resp.stop_reason), "", usage
     text = next((b.text for b in resp.content if b.type == "text"), "")
     try:
-        return Classification.model_validate_json(text), text, *usage
+        return Classification.model_validate_json(text), text, usage
     except ValidationError:
-        return _uncertain("schema_failure"), text, *usage
+        return _uncertain("schema_failure"), text, usage
+
+
+def classify_one(client, c: Change, system: str, model: str):
+    """Returns (Classification, raw_text, Usage, duration_ms)."""
+    t0 = time.perf_counter()
+    resp = client.messages.create(**request_params(c, system, model))
+    ms = round((time.perf_counter() - t0) * 1000)
+    return (*parse_message(resp), ms)
+
+
+def is_classified(db: sqlite3.Connection, change_id: str, sha: str, model: str) -> bool:
+    return db.execute("SELECT 1 FROM classifications WHERE change_id=? AND prompt_sha256=? AND model_id=?",
+                      (change_id, sha, model)).fetchone() is not None
+
+
+def store_classification(db: sqlite3.Connection, c: Change, cls: Classification, raw: str, usage: Usage, *,
+                         system: str, prompt_version: str, sha: str, model: str, run_id: str,
+                         mode: str = "standard", batch_id: str | None = None,
+                         duration_ms: int | None = None) -> bool:
+    """Save one answer with its provenance, cost inputs and timing. Returns evidence_grounded."""
+    if cls.label == "uncertain" and not cls.uncertainty_reason:
+        cls.uncertainty_reason = "model gave no reason"
+    grounded = evidence_grounded(cls.evidence_quotes, c)
+    msg = build_user_message(c)
+    db.execute(
+        "INSERT INTO classifications (change_id, old_paragraph_id, new_paragraph_id, label, secondary_label, "
+        "is_material, confidence, rationale, evidence_quotes, evidence_grounded, uncertainty_reason, "
+        "prompt_version, prompt_sha256, model_id, run_id, created_at, input_hash, raw_response, "
+        "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, mode, batch_id, duration_ms, "
+        "input_chars) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (c.change_id, c.old_paragraph_id, c.new_paragraph_id, cls.label, cls.secondary_label,
+         int(cls.is_material), cls.confidence, cls.rationale, json.dumps(cls.evidence_quotes),
+         int(grounded), cls.uncertainty_reason, prompt_version, sha, model, run_id,
+         datetime.now(timezone.utc).isoformat(), hashlib.sha256(msg.encode()).hexdigest(),
+         raw, usage.input, usage.output, usage.cache_read, usage.cache_write, mode, batch_id, duration_ms,
+         len(system) + len(msg)))
+    db.commit()
+    return grounded
 
 
 def classify_changes(client, changes: list[Change], db: sqlite3.Connection, *,
@@ -154,23 +199,13 @@ def classify_changes(client, changes: list[Change], db: sqlite3.Connection, *,
     run_id = uuid.uuid4().hex[:12]
     done = skipped = 0
     for c in changes:
-        key = (c.change_id, sha, model)
-        if db.execute("SELECT 1 FROM classifications WHERE change_id=? AND prompt_sha256=? AND model_id=?", key).fetchone():
+        if is_classified(db, c.change_id, sha, model):
             skipped += 1
             continue
-        cls, raw, tin, tout = classify_one(client, c, system, model)
-        if cls.label == "uncertain" and not cls.uncertainty_reason:
-            cls.uncertainty_reason = "model gave no reason"
-        grounded = evidence_grounded(cls.evidence_quotes, c)
-        db.execute(
-            "INSERT INTO classifications VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (c.change_id, c.old_paragraph_id, c.new_paragraph_id, cls.label, cls.secondary_label,
-             int(cls.is_material), cls.confidence, cls.rationale, json.dumps(cls.evidence_quotes),
-             int(grounded), cls.uncertainty_reason, prompt_version, sha, model, run_id,
-             datetime.now(timezone.utc).isoformat(), hashlib.sha256(build_user_message(c).encode()).hexdigest(),
-             raw, tin, tout))
-        db.commit()
+        cls, raw, usage, ms = classify_one(client, c, system, model)
+        grounded = store_classification(db, c, cls, raw, usage, system=system, prompt_version=prompt_version,
+                                        sha=sha, model=model, run_id=run_id, duration_ms=ms)
         done += 1
-        log(f"[{done}] {c.change_id} {cls.label} ({cls.confidence}) grounded={grounded}")
+        log(f"[{done}] {c.change_id} {cls.label} ({cls.confidence}) grounded={grounded} {ms / 1000:.1f}s")
     log(f"run {run_id}: classified {done}, skipped {skipped} already done")
     return run_id
